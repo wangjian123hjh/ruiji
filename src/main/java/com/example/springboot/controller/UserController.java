@@ -9,9 +9,11 @@ import com.example.springboot.utils.ValidateCodeUtils;
 import jakarta.servlet.http.HttpSession;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @RestController
 @RequestMapping("/user")
@@ -19,7 +21,8 @@ import java.util.Map;
 public class UserController {
     @Autowired
     private UserService userService;
-
+    @Autowired
+    private StringRedisTemplate redisTemplate;
 
     @PostMapping("/sendMsg")
     public R<String> sendMsg(@RequestBody User user, HttpSession session){
@@ -28,9 +31,8 @@ public class UserController {
             String code = ValidateCodeUtils.generateValidateCode(4).toString();
             log.info("code={}",code);
             System.out.println(code);
-            //调用阿里云的短信服务
-
-            session.setAttribute(phone,code);
+            //将生成的验证码保存到redis中
+            redisTemplate.opsForValue().set(phone,code,5, TimeUnit.MINUTES);
             return R.success("短信发送成功！");
         }
         return R.error("短信发送失败！");
@@ -46,7 +48,13 @@ public class UserController {
         String code = map.get("code").toString();
         //从Session中获取保存的验证码
         String codeInSession =(String) session.getAttribute(phone);
-        //进行验证码的比对（页面提交的验证码和Session中保存的验证码进行比对）
+        //进行验证码的比对（页面提交的验证码和Redis中保存的验证码进行比对）
+//        String s = redisTemplate.opsForValue().get(phone);
+//        if (s.equals(code)){
+//            //验证码匹配成功
+//            redisTemplate.delete(phone);
+//        }
+
 
 //        codeInSession!=null && codeInSession.equals(code)
         if (true) {

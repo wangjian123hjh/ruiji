@@ -12,9 +12,12 @@ import com.example.springboot.service.DishFlavorService;
 import com.example.springboot.service.DishService;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @RestController
@@ -26,8 +29,12 @@ public class DishController {
     private CategoryService categoryService;
     @Autowired
     private DishFlavorService dishFlavorService;
+    @Autowired
+    private RedisTemplate redisTemplate;
     @PostMapping
     public R<String> save(@RequestBody DishDto dishDto){
+        String key="dish_"+dishDto.getCategoryId()+"_1";
+        redisTemplate.delete(key);
         dishService.saveWithFlavor(dishDto);
         return R.success("新增菜品成功！");
     }
@@ -64,6 +71,8 @@ public class DishController {
     }
     @PutMapping
     public R<String> update(@RequestBody DishDto dishDto){
+        String key="dish_"+dishDto.getCategoryId()+"_1";
+        redisTemplate.delete(key);
         dishService.updateWithFlavor(dishDto);
         return R.success("更新菜品成功！");
     }
@@ -80,12 +89,19 @@ public class DishController {
 
     @GetMapping("/list")
     public R<List<DishDto>> list(Dish dish){
+        List<DishDto> dishDtos =null;
+        //先从redis中查询获取数据，如果没有则从mybatis中获取
+        String key="dish_"+dish.getCategoryId()+"_"+dish.getStatus();
+        dishDtos =(List<DishDto>) redisTemplate.opsForValue().get(key);
+        if (dishDtos!=null){
+            return R.success(dishDtos);
+        }
         LambdaQueryWrapper<Dish> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(dish.getCategoryId()!=null,Dish::getCategoryId,dish.getCategoryId());
         queryWrapper.eq(Dish::getStatus,1);
         queryWrapper.orderByAsc(Dish::getSort).orderByDesc(Dish::getUpdateTime);
         List<Dish> list = dishService.list(queryWrapper);
-        List<DishDto> dishDtos = list.stream().map((item)->{
+        dishDtos = list.stream().map((item)->{
             LambdaQueryWrapper<DishFlavor> queryWrapper1 = new LambdaQueryWrapper<>();
             queryWrapper1.eq(DishFlavor::getDishId,item.getId());
             List<DishFlavor> list1 = dishFlavorService.list(queryWrapper1);
@@ -94,6 +110,7 @@ public class DishController {
             dishDto.setFlavors(list1);
             return dishDto;
         }).collect(Collectors.toList());
+        redisTemplate.opsForValue().set(key,dishDtos,60, TimeUnit.MINUTES);
         return R.success(dishDtos);
     }
 }
